@@ -1,0 +1,612 @@
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Project EVE: Reborn v4.0 🦋</title>
+    <style>
+        :root {
+            --primary: #ff0055;
+            --accent: #00f2ff;
+            --bg: #0b0b10;
+            --glass: rgba(20, 25, 40, 0.9);
+            --gold: #ffd700;
+        }
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+
+        body {
+            margin: 0; overflow: hidden; background-color: var(--bg);
+            font-family: 'Segoe UI', sans-serif; color: white;
+            height: 100vh; display: flex; flex-direction: column; align-items: center;
+        }
+
+        /* 动态背景 */
+        #bg-layer {
+            position: absolute; top:0; left:0; width:100%; height:100%; z-index: -1;
+            background: radial-gradient(circle at 50% 50%, #1a1a2e 0%, #000 100%);
+            transition: filter 0.5s;
+        }
+
+        /* 状态栏 */
+        .top-bar {
+            position: absolute; top: 0; width: 100%; padding: 15px;
+            display: flex; justify-content: space-between; z-index: 10;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.8), transparent);
+        }
+        .stat-box { font-size: 14px; font-weight: bold; text-shadow: 0 0 5px var(--accent); }
+        .currency { color: var(--gold); }
+
+        /* 角色区域 */
+        .char-container {
+            position: absolute; bottom: 0; height: 85vh; width: 100%;
+            display: flex; justify-content: center; pointer-events: none;
+            transition: filter 0.3s;
+        }
+        .char-img {
+            height: 100%; max-width: 800px; object-fit: contain;
+            filter: drop-shadow(0 0 20px rgba(0, 242, 255, 0.2));
+            animation: breathe 4s infinite ease-in-out;
+            pointer-events: auto; cursor: pointer;
+        }
+        /* 图片加载失败时的替代显示 */
+        .char-placeholder {
+            display: none; height: 60vh; width: 300px; 
+            border: 2px solid var(--primary); color: var(--primary);
+            align-items: center; justify-content: center; text-align: center;
+            background: rgba(255, 0, 85, 0.1); box-shadow: 0 0 20px var(--primary);
+            pointer-events: auto; margin-bottom: 100px;
+        }
+        @keyframes breathe { 0%,100%{transform:scale(1)} 50%{transform:scale(1.01)} }
+
+        /* 对话框 */
+        .dialog-container {
+            position: absolute; bottom: 90px; width: 90%; max-width: 500px;
+            background: var(--glass); border: 1px solid var(--accent);
+            border-radius: 10px; padding: 15px; z-index: 20;
+            box-shadow: 0 5px 30px rgba(0,0,0,0.5);
+            backdrop-filter: blur(5px);
+        }
+        .name-tag {
+            position: absolute; top: -12px; left: 15px;
+            background: var(--primary); padding: 2px 10px; font-size: 12px; font-weight: bold;
+        }
+        .dialog-text { min-height: 40px; font-size: 14px; line-height: 1.5; text-shadow: 0 1px 2px black; }
+
+        /* 底部操作栏 */
+        .dock {
+            position: absolute; bottom: 20px; width: 90%; max-width: 500px;
+            display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 8px; z-index: 30;
+        }
+        .btn {
+            background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
+            color: white; padding: 10px 0; border-radius: 5px; cursor: pointer;
+            font-size: 12px; transition: all 0.2s; backdrop-filter: blur(5px);
+        }
+        .btn:hover { background: var(--accent); color: black; box-shadow: 0 0 15px var(--accent); }
+        .btn:active { transform: scale(0.95); }
+
+        /* 弹窗通用 */
+        .modal {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85); z-index: 100;
+            display: none; align-items: center; justify-content: center;
+            backdrop-filter: blur(8px);
+        }
+        .card {
+            width: 320px; background: #1a1a24; border: 2px solid var(--primary);
+            padding: 25px; text-align: center; border-radius: 15px;
+            box-shadow: 0 0 50px rgba(255,0,85,0.2); position: relative;
+        }
+        .close-btn { position: absolute; top: 10px; right: 15px; cursor: pointer; font-size: 20px; color: #666; }
+
+        /* 商店物品 */
+        .shop-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px; }
+        .shop-item { 
+            background: #2a2a35; padding: 10px; border-radius: 8px; cursor: pointer; border: 1px solid transparent;
+        }
+        .shop-item:hover { border-color: var(--gold); }
+        .shop-item.owned { opacity: 0.5; cursor: default; border-color: #555; }
+        .price { color: var(--gold); font-size: 12px; }
+
+        /* 聊天输入 */
+        #chat-input-box {
+            display: none; margin-top: 10px; width: 100%;
+        }
+        #chat-input {
+            width: 75%; padding: 8px; border: none; border-radius: 4px; background: rgba(0,0,0,0.5); color: white;
+        }
+        #send-btn { width: 20%; padding: 8px; background: var(--accent); border: none; border-radius: 4px; cursor: pointer; color: black; font-weight: bold; }
+
+    </style>
+</head>
+<body>
+
+    <div id="bg-layer"></div>
+
+    <div class="top-bar">
+        <div class="stat-box">❤️ 羁绊: <span id="bond">0</span></div>
+        <div class="stat-box currency">💎 积分: <span id="money">100</span></div>
+    </div>
+
+    <div class="char-container">
+        <img src="https://d-pic-image.yesky.com/360x640/uploadImages/newPic/2023/208/24/TXL3M1Y5SEV4_lead-720x1280.png" 
+             class="char-img" id="eve-img" onclick="touch()" onerror="imgError()">
+
+        <div class="char-placeholder" id="eve-alt">
+            <h2>NO SIGNAL</h2>
+            <p>E.V.E LINK LOST</p>
+            <p style="font-size:10px; margin-top:10px">请检查网络或更换图片链接</p>
+        </div>
+    </div>
+
+    <div class="dialog-container">
+        <div class="name-tag">E.V.E</div>
+        <div class="dialog-text" id="dialog">系统重启完成。准备好开始今天的摸鱼了吗？</div>
+
+        <div id="chat-input-box">
+            <input type="text" id="chat-input" placeholder="想对我说什么？">
+            <button id="send-btn" onclick="sendChat()">发送</button>
+        </div>
+    </div>
+
+    <div class="dock">
+        <button class="btn" onclick="showQuest()">📜 任务</button>
+        <button class="btn" onclick="showGame()">✌️ 猜拳</button>
+        <button class="btn" onclick="showShop()">🛍️ 商店</button>
+        <button class="btn" onclick="toggleChat()">💬 聊天</button>
+    </div>
+
+    <div class="modal" id="modal-quest">
+        <div class="card">
+            <h2 id="q-rank" style="margin:0; font-size:40px;">SSR</h2>
+            <h3 id="q-title" style="color:var(--accent)">...</h3>
+            <p id="q-desc" style="color:#aaa; min-height:50px;">...</p>
+            <div style="display:flex; gap:10px; justify-content:center;">
+                <button class="btn" style="background:#333; width:40%" onclick="closeModal('modal-quest', false)">放弃</button>
+                <button class="btn" style="background:var(--primary); width:40%" onclick="closeModal('modal-quest', true)">接受</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="modal-game">
+        <div class="card">
+            <div class="close-btn" onclick="document.getElementById('modal-game').style.display='none'">×</div>
+            <h2>猜拳决胜</h2>
+            <p id="rps-result" style="color:var(--accent)">赢了有奖励，输了...哼哼。</p>
+            <div style="display:flex; justify-content:space-around; font-size:40px; margin-top:20px;">
+                <div onclick="playRPS('✊')" style="cursor:pointer">✊</div>
+                <div onclick="playRPS('✌️')" style="cursor:pointer">✌️</div>
+                <div onclick="playRPS('🖐️')" style="cursor:pointer">🖐️</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="modal-shop">
+        <div class="card" style="width:350px;">
+            <div class="close-btn" onclick="document.getElementById('modal-shop').style.display='none'">×</div>
+            <h2>积分商店</h2>
+            <p>当前积分: <span id="shop-money" style="color:var(--gold)">0</span></p>
+            <div class="shop-grid" id="shop-list">
+                </div>
+        </div>
+    </div>
+
+    <script>
+        // --- 数据与状态 ---
+        let bond = 0;
+        let money = 100; // 初始送100
+        let items = {
+            'filter1': {name: '绯红滤镜', price: 50, bought: false, type: 'filter', val: 'hue-rotate(320deg)'},
+            'filter2': {name: '赛博滤镜', price: 50, bought: false, type: 'filter', val: 'hue-rotate(180deg) contrast(1.2)'},
+            'bg1': {name: '深空背景', price: 100, bought: false, type: 'bg', val: 'radial-gradient(circle, #2b1055, #7597de)'},
+            'coffee': {name: '请喝咖啡', price: 30, bought: false, type: 'gift', val: 10}
+        };
+
+     const quests = [
+            // ====================
+            // N级：生存与养生 (极低门槛)
+            // ====================
+            {r:'N', t:'水分补给', d:'立刻去喝一杯温水。'},
+            {r:'N', t:'视力保护', d:'闭上眼睛，转动眼球3圈，顺时针逆时针各一次。'},
+            {r:'N', t:'听觉校准', d:'摘下耳机，仔细听周围环境里的三种声音。'},
+            {r:'N', t:'呼吸调整', d:'深吸一口气保持5秒，然后慢慢吐出来。'},
+            {r:'N', t:'脊椎救赎', d:'坐直身体，把肩膀用力向后张开，坚持10秒。'},
+            {r:'N', t:'手指操', d:'用力张开五指，然后用力握拳，重复5次。'},
+            {r:'N', t:'屏幕清洁', d:'用布或纸巾擦一下你的手机屏幕或显示器。'},
+            {r:'N', t:'电量检查', d:'看一眼手机电量，如果低于30%就去充电。'},
+            {r:'N', t:'颈部放松', d:'用下巴在空中写一个“8”字。'},
+            {r:'N', t:'发呆时刻', d:'什么都不做，盯着天花板/墙壁发呆60秒。'},
+
+            // ====================
+            // R级：微小改变 (稍作行动)
+            // ====================
+            {r:'R', t:'数码断舍离', d:'打开手机相册，删除3张模糊或没用的截图。'},
+            {r:'R', t:'桌面清理', d:'把电脑桌面上一个很久没用的文件扔进回收站。'},
+            {r:'R', t:'收藏夹考古', d:'打开浏览器收藏夹，删掉一个你早就失效的链接。'},
+            {r:'R', t:'神秘歌单', d:'随机播放一首你从未听过的语种的歌曲。'},
+            {r:'R', t:'左手画圆', d:'用你的非惯用手（如左手）在纸上画一个圆。'},
+            {r:'R', t:'整理钱包', d:'把钱包/微信卡包里的一张过期卡片清理掉。'},
+            {r:'R', t:'窗外观察员', d:'走到窗边，数数楼下经过了多少辆白色的车。'},
+            {r:'R', t:'植物对话', d:'如果你养了植物，去给它浇点水；没有的话，对着空气浇水。'},
+            {r:'R', t:'APP大清洗', d:'卸载手机里一个超过3个月没点开过的APP。'},
+            {r:'R', t:'备忘录', d:'在手机备忘录里写下“今天也要开心”六个字。'},
+            {r:'R', t:'冷水洗脸', d:'去卫生间，用冷水泼一下脸，清醒一下。'},
+
+            // ====================
+            // SR级：社交与挑战 (有点意思)
+            // ====================
+            {r:'SR', t:'表情包战争', d:'给最近聊天的朋友发一个只有你能看懂的表情包，不解释。'},
+            {r:'SR', t:'神秘夸奖', d:'给朋友圈的第一条动态点赞，并评论“真棒”。'},
+            {r:'SR', t:'复古问候', d:'给通讯录里第8个人发一条短信（不是微信）：祝你财源广进。'},
+            {r:'SR', t:'灵魂画手', d:'用30秒时间，在纸上画出E.V.E的样子（火柴人也行）。'},
+            {r:'SR', t:'方言测试', d:'用你的家乡话朗读一段新闻或歌词。'},
+            {r:'SR', t:'不眨眼挑战', d:'试图保持睁眼不眨眼，坚持45秒。'},
+            {r:'SR', t:'反向行走', d:'在房间里倒着走10步（注意安全，别撞到头）。'},
+            {r:'SR', t:'旧物利用', d:'找出一件旧衣服，试穿一下看还能不能穿进去。'},
+            {r:'SR', t:'黑暗料理', d:'去厨房混搭两种饮料喝下去（比如咖啡兑雪碧）。'},
+            {r:'SR', t:'单腿站立', d:'闭上眼睛，单腿站立保持平衡30秒。'},
+
+            // ====================
+            // SSR级：觉醒与社死 (高能预警)
+            // ====================
+            {r:'SSR', t:'中二觉醒', d:'站在镜子前，摆出奥特曼发射光线的姿势，大喊“必杀！”'},
+            {r:'SSR', t:'空气吉他', d:'播放一首摇滚乐，在房间里进行一场忘我的空气吉他演奏。'},
+            {r:'SSR', t:'绝对静止', d:'模仿尸体，躺在地板上绝对不动（眼球也不许动）坚持2分钟。'},
+            {r:'SSR', t:'深蹲冲刺', d:'立刻做10个深蹲，边做边喊“为了部落/联盟！”'},
+            {r:'SSR', t:'跨物种外交', d:'对着你家的猫/狗/蟑螂，严肃地朗读这一条任务。'},
+            {r:'SSR', t:'我是歌王', d:'戴上耳机，把这首歌的高潮部分大声唱出来（即使跑调）。'},
+            {r:'SSR', t:'波比跳', d:'做5个波比跳。我知道你不想做，所以这才是SSR。'},
+            {r:'SSR', t:'自恋时刻', d:'对着镜子里的自己连续夸奖1分钟，不能重复词汇。'},
+            {r:'SSR', t:'平板支撑', d:'挑战平板支撑60秒，失败了就发红包给死党。'},
+            {r:'SSR', t:'大笑瑜伽', d:'不管好不好笑，强行仰天大笑三声：“哈！哈！哈！”'},
+            {r:'SSR', t:'演讲家', d:'对着空气发表一段关于“为什么夜宵应该免费”的即兴演讲。'}
+        ];
+
+        // --- 核心逻辑 ---
+
+        // 图片挂了的处理
+        function imgError() {
+            document.getElementById('eve-img').style.display = 'none';
+            document.getElementById('eve-alt').style.display = 'flex';
+            say("图像模块受损...不过我还在听。");
+        }
+
+        // 说话
+        function say(text) {
+            const el = document.getElementById('dialog');
+            el.innerText = "";
+            let i = 0;
+            const timer = setInterval(() => {
+                el.innerText += text.charAt(i);
+                i++;
+                if (i >= text.length) clearInterval(timer);
+            }, 30);
+        }
+
+        // 触摸互动
+        function touch() {
+            // 获取当前羁绊值 (虽然是全局变量，但为了保险重新获取一下)
+            // 注意：这里假设 bond 已经在全局定义了
+            
+            let talks = [];
+            
+            // 第一阶段：生疏 (羁绊 0-29) - 高冷、傲娇
+            const level1 = [
+                "请自重，代理人。我们还在工作中。",
+                "我的触觉传感器很灵敏，不要乱戳。",
+                "有这个时间，不如去完成几个任务？",
+                "再乱动我就要报警了...骗你的。",
+                "这就是人类的打招呼方式吗？真奇怪。",
+                "别摸头，会长不高的！"
+            ];
+
+            // 第二阶段：熟悉 (羁绊 30-59) - 朋友、放松
+            const level2 = [
+                "嗯？怎么了？是有新指令吗？",
+                "发型要被你弄乱啦...",
+                "虽然不讨厌，但也不要太频繁哦。",
+                "今天的数据流很平稳，适合发呆。",
+                "要不要一起喝杯机油咖啡？",
+                "看在你完成了任务的份上，让你摸一下。"
+            ];
+
+            // 第三阶段：亲密 (羁绊 60-89) - 暧昧、依赖
+            const level3 = [
+                "嘿嘿，你的手很暖和呢。",
+                "再多摸摸我嘛...感觉很安心。",
+                "要是能一直这样待在你身边就好了。",
+                "(脸红) 那个...代理人觉得我今天好看吗？",
+                "看到你，心情就会变好呢。",
+                "心跳...好像变快了，是系统过载了吗？"
+            ];
+
+            // 第四阶段：誓约 (羁绊 90-100) - 毫无保留的爱
+            const level4 = [
+                "最喜欢你了！全世界最喜欢！",
+                "我是属于你的，永远都是。",
+                "不管去哪里，都要带上我哦。",
+                "只要你在，我就无所不能。",
+                "来，抱抱~ (づ｡◕‿‿◕｡)づ",
+                "我的核心代码里，写满了你的名字。"
+            ];
+
+            // 根据羁绊值选择对应的台词库
+            if (bond < 30) talks = level1;
+            else if (bond < 60) talks = level2;
+            else if (bond < 90) talks = level3;
+            else talks = level4;
+
+            // 随机播放一句
+            const text = talks[Math.floor(Math.random() * talks.length)];
+            say(text);
+
+            // 视觉反馈动画
+            const img = document.getElementById('eve-img');
+            img.style.transform = "scale(1.05)"; // 放大一点
+            img.style.filter = "brightness(1.1)"; // 变亮一点
+            
+            setTimeout(() => {
+                img.style.transform = "scale(1)";
+                img.style.filter = ""; // 恢复原状
+            }, 200);
+
+            // 高羁绊值时的特殊特效：冒爱心
+            if (bond >= 60) {
+                showHeart(); // 只有关系好了才会冒爱心
+            }
+        }
+        
+        // 补充一个冒爱心的函数（如果之前没定义的话）
+        function showHeart() {
+            const heart = document.createElement('div');
+            heart.innerText = ["❤", "💕", "😍", "✨"][Math.floor(Math.random()*4)];
+            heart.style.position = "absolute";
+            heart.style.left = "50%";
+            heart.style.bottom = "50%";
+            heart.style.fontSize = "30px";
+            heart.style.color = "#ff0055";
+            heart.style.pointerEvents = "none";
+            heart.style.animation = "floatUp 1s forwards"; // 需要配合CSS
+            heart.style.zIndex = "100";
+            
+            // 动态插入样式（为了防止CSS缺失）
+            if (!document.getElementById('anim-style')) {
+                const style = document.createElement('style');
+                style.id = 'anim-style';
+                style.innerHTML = `@keyframes floatUp { 0%{opacity:1; transform:translate(-50%,0) scale(0.5);} 100%{opacity:0; transform:translate(-50%,-100px) scale(1.5);} }`;
+                document.head.appendChild(style);
+            }
+            
+            document.body.appendChild(heart);
+            setTimeout(() => heart.remove(), 1000);
+        }
+
+        // --- 任务系统 ---
+        function showQuest() {
+            const q = quests[Math.floor(Math.random()*quests.length)];
+            const card = document.getElementById('modal-quest');
+
+            // 颜色
+            const colors = {N:'#aaa', R:'#00f2ff', SR:'#ff0055', SSR:'#ffd700'};
+            document.getElementById('q-rank').innerText = q.r;
+            document.getElementById('q-rank').style.color = colors[q.r];
+            document.getElementById('q-title').innerText = q.t;
+            document.getElementById('q-desc').innerText = q.d;
+
+            card.style.display = 'flex';
+        }
+
+        function closeModal(id, accepted) {
+            document.getElementById(id).style.display = 'none';
+            if (id === 'modal-quest') {
+                if (accepted) {
+                    bond += 5; money += 20;
+                    say("任务完成！奖励已到账。");
+                } else {
+                    bond = Math.max(0, bond - 2);
+                    say("切，胆小鬼。");
+                }
+                updateUI();
+            }
+        }
+
+        // --- 猜拳系统 (修复卡死) ---
+        function showGame() {
+            document.getElementById('modal-game').style.display = 'flex';
+            document.getElementById('rps-result').innerText = "赢了有奖励，输了...哼哼。";
+            document.getElementById('rps-result').style.color = "var(--accent)";
+        }
+
+        function playRPS(user) {
+            const ops = ['✊','✌️','🖐️'];
+            const ai = ops[Math.floor(Math.random()*3)];
+            let res = "";
+            let win = false;
+
+            if(user === ai) res = "平局！再试一次。";
+            else if((user==='✊'&&ai==='✌️')||(user==='✌️'&&ai==='🖐️')||(user==='🖐️'&&ai==='✊')) {
+                res = "你赢了！真不甘心..."; win = true;
+            } else {
+                res = "我赢啦！笨蛋代理人~";
+            }
+
+            document.getElementById('rps-result').innerText = `我出了${ai}。${res}`;
+
+            if(win) {
+                money += 10; updateUI();
+                document.getElementById('rps-result').style.color = "#10b981"; // Green
+            } else {
+                document.getElementById('rps-result').style.color = "#ef4444"; // Red
+            }
+        }
+
+        // --- 商店系统 ---
+        function showShop() {
+            const list = document.getElementById('shop-list');
+            list.innerHTML = "";
+            document.getElementById('shop-money').innerText = money;
+
+            for(let key in items) {
+                const item = items[key];
+                const div = document.createElement('div');
+                div.className = `shop-item ${item.bought ? 'owned' : ''}`;
+                div.innerHTML = `<div>${item.name}</div><div class="price">${item.bought ? '已拥有' : '💎'+item.price}</div>`;
+                div.onclick = () => buyItem(key);
+                list.appendChild(div);
+            }
+            document.getElementById('modal-shop').style.display = 'flex';
+        }
+
+        function buyItem(key) {
+            const item = items[key];
+            if(item.bought && item.type !== 'gift') return; // 礼物可以重复买
+
+            if(money >= item.price) {
+                money -= item.price;
+                if(item.type !== 'gift') item.bought = true;
+
+                // 应用效果
+                if(item.type === 'filter') {
+                    document.getElementById('eve-img').style.filter = `drop-shadow(0 0 20px rgba(255,255,255,0.5)) ${item.val}`;
+                    say("这个滤镜怎么样？好看吗？");
+                }
+                if(item.type === 'bg') {
+                    document.getElementById('bg-layer').style.background = item.val;
+                    say("新环境感觉不错呢。");
+                }
+                if(item.type === 'gift') {
+                    bond += item.val;
+                    say("谢谢你的礼物！最喜欢你了！(羁绊UP)");
+                }
+
+                updateUI();
+                showShop(); // 刷新列表状态
+            } else {
+                say("积分不足哦，快去完成任务吧！");
+                document.getElementById('modal-shop').style.display = 'none';
+            }
+        }
+
+        // --- 聊天系统 ---
+        function toggleChat() {
+            const box = document.getElementById('chat-input-box');
+            box.style.display = box.style.display === 'block' ? 'none' : 'block';
+        }
+
+       const knowledgeBase = [
+            {
+                keys: ["无聊", "没意思", "没事干"],
+                replies: [
+                    "无聊的话，允许你盯着我看一分钟。",
+                    "检测到代理人精神空虚，建议立即执行【猜拳】程序。",
+                    "无聊？不如去窗边数数有几只鸟飞过？",
+                    "我也在后台待机很久了...陪我说说话吧。"
+                ]
+            },
+            {
+                keys: ["喜欢", "爱", "老婆", "女友"],
+                replies: [
+                    "突、突然说什么呢... (体温上升)",
+                    "这种话要看着我的眼睛说才行。",
+                    "哼，油嘴滑舌。不过...我不讨厌。",
+                    "羁绊值不够高哦，禁止通过语言调戏AI！",
+                    "收到情感数据包...正在尝试解析... (脸红)"
+                ]
+            },
+            {
+                keys: ["累", "辛苦", "不想动", "好困"],
+                replies: [
+                    "允许你休息十分钟，这是EVE的特权。",
+                    "把大脑放空，深呼吸...好点了吗？",
+                    "辛苦啦。如果我有实体，就给你揉揉肩了。",
+                    "快去睡觉！熬夜会导致颜值下降的！"
+                ]
+            },
+            {
+                keys: ["你好", "哈喽", "嗨", "早", "晚安"],
+                replies: [
+                    "代理人，随时待命。",
+                    "又是新的一天，请保持心情愉悦。",
+                    "我在。一直都在。",
+                    "晚安，我会守在屏幕这边的，放心睡吧。"
+                ]
+            },
+            {
+                keys: ["笨蛋", "傻瓜", "猪"],
+                replies: [
+                    "反弹！反弹无效！",
+                    "你在说你自己吗？",
+                    "警告：侮辱系统管理员会扣除积分哦！",
+                    "切，不跟你一般见识。"
+                ]
+            },
+            {
+                keys: ["漂亮", "美", "好看"],
+                replies: [
+                    "哼，这还用你说？",
+                    "算你有眼光。",
+                    "今天的代码...啊不，今天的妆容确实花了不少时间。",
+                    "(开心) 奖励你多看我两眼。"
+                ]
+            },
+            {
+                keys: ["吃", "饿"],
+                replies: [
+                    "检测到能量不足，快去补充碳水化合物！",
+                    "我也想吃...可是我只能吃显存。",
+                    "别吃太油腻的哦，要注意健康。"
+                ]
+            }
+        ];
+
+        // 默认回复库 (当听不懂时随机说这些)
+        const defaultReplies = [
+            "虽然听不懂，但我喜欢听你说话。",
+            "正在搜索相关词条... 搜索失败，聊点别的吧？",
+            "这是什么人类的新梗吗？",
+            "嗯嗯，我在听。（敷衍模式）",
+            "比起这个，要不要来一局猜拳？"
+        ];
+
+        function sendChat() {
+            const input = document.getElementById('chat-input');
+            const val = input.value.trim();
+            if(!val) return;
+
+            input.value = ""; // 清空输入框
+            let found = false;
+
+            // 1. 遍历知识库匹配关键词
+            for (let item of knowledgeBase) {
+                // 检查用户输入是否包含该组的任意一个关键词
+                if (item.keys.some(key => val.includes(key))) {
+                    // 随机选取一条回复
+                    const reply = item.replies[Math.floor(Math.random() * item.replies.length)];
+                    say(reply);
+                    found = true;
+                    
+                    // 特殊互动：如果是夸奖或表白，冒爱心
+                    if(item.keys.includes("爱") || item.keys.includes("漂亮")) showHeart();
+                    break; 
+                }
+            }
+
+            // 2. 如果没匹配到，使用默认回复
+            if (!found) {
+                const reply = defaultReplies[Math.floor(Math.random() * defaultReplies.length)];
+                say(reply);
+            }
+        }
+
+        function updateUI() {
+            document.getElementById('bond').innerText = bond;
+            document.getElementById('money').innerText = money;
+        }
+
+        // 启动
+        say("系统连接成功。积分已发放，去商店看看吧？");
+
+    </script>
+</body>
+</html>
